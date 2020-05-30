@@ -1,0 +1,4 @@
+// Wrong function syntax
+f:function (x:integer, y:integer) {
+	return;
+}

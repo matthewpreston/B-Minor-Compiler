@@ -1,5 +1,0 @@
-a:integer = 5;
-
-f:function void () {
-	print "hello";
-}

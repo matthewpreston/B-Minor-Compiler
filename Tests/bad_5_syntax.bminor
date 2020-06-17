@@ -1,0 +1,13 @@
+/* f2: Something about floor(log_x(y)) */
+f2:function integer (x:integer, y:integer) {
+	if (x > y) return 0;
+	i:integer;
+	for (i = 0; x^i <= y; i = i + 1) {
+		if (i > 5) {
+			print i;
+		}
+	} else { // Error: Misplaced else
+		print 0;
+	}
+	return i;
+}

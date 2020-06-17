@@ -1,0 +1,10 @@
+// Tests 'print' to print various types
+a:integer = 5;
+b:char = 'c';
+c:string = "Hello";
+d:boolean = false;
+
+main:function integer() {
+	print a, b, c, d;
+	return 0;
+}

@@ -1,0 +1,8 @@
+// The C++ style end-of-line comment has higher precedence over C's multiline comment, but
+// since the C++ comment started first, it will snatch the starting /* and leave a dangling */
+
+// Error: Snatched ---> /*
+Blah blah blah */
+main:function integer () {
+	return 0;
+}

@@ -1,27 +1,43 @@
 CC = gcc
-FLAGS = -Wall
-OBJECTS = decl.o parser.o scanner.o
+CFLAGS = -Wall -g
+LDFLAGS=`pkg-config libgvc --libs`
+OBJECTS = hash_table.o stack.o ast.o symbol.o scope.o visualize_tree.o parser.o scanner.o
 TARGET = bminor
-SOURCE_FILES = Makefile test_cases.sh type.h scanner.flex parser.bison decl.h decl.c
+SOURCE_FILES = Makefile test_cases.sh type.h scanner.flex parser.bison ast.h ast.c visualize_tree.h visualize_tree.c hash_table.h hash_table.c stack.h stack.c symbol.h symbol.c scope.h scope.c
 
 $(TARGET): $(OBJECTS)
-	$(CC) -o $@ $(OBJECTS) $(FLAGS)
+	$(CC) $(CFLAGS) -o $@ $(OBJECTS) $(LDFLAGS)
 
-decl.o: decl.h
+# Simple objects
+hash_table.o: hash_table.h
+stack.o: stack.h
 
-parser.o:
-parser.c: parser.bison decl.h
-	bison -v --defines=token.h --output=$@ $<
+# Dependencies for parser
+ast.o: ast.h symbol.h scope.h
+symbol.o: symbol.h ast.h
+scope.o: scope.h hash_table.h stack.h symbol.h ast.h
 
-scanner.o:
+# A debugging tool for visualizing the abstract syntax tree
+visualize_tree.o: visualize_tree.h ast.h
+	$(CC) $(CFLAGS) `pkg-config libgvc --cflags` -c -o $@ visualize_tree.c
+
+# The actual parser and scanner
+parser.o: ast.h token.h
+parser.c: parser.bison ast.h
+	bison --defines=token.h --output=$@ $<
+scanner.o: token.h
 scanner.c: scanner.flex token.h
-	flex -o $@ $^
+	flex -o $@ $<
 	
 .PHONY: clean test wc
 clean:
-	-rm -f $(TARGET) $(OBJECTS) parser.c token.h scanner.c
-test:
+	$(RM) $(TARGET) $(OBJECTS) parser.c token.h scanner.c Tests/*.svg
+	
+# For testing the compiler against a series of test cases
+test: $(TARGET)
 	bash test_cases.sh
+	
+# For seeing how many lines of hand-written code I've done
 wc:
 	@echo "Total line counts (with blank lines):\nLines Words Chars"; \
 	wc $(SOURCE_FILES);

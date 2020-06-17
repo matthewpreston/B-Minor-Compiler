@@ -1,5 +1,7 @@
-#ifndef DECL_H
-#define DECL_H
+#ifndef AST_H
+#define AST_H
+
+#include "symbol.h"
 
 // Atomic types
 typedef enum {
@@ -22,16 +24,15 @@ struct type {
 struct type *type_create(type_t kind, struct type *subtype,
 	struct param_list *params);
 
-// Prints type data
-void type_print(struct type *t);
+// Copy constructor for type
+struct type *type_create_copy(struct type *t);
 
 // Destructor for type
 void type_free(struct type *t);
 
 // Parameter list for functions
 struct param_list {
-	const char *name;			// Identifier
-	struct type *type;			// Type
+	struct symbol *symbol;		// Contains name and type
 	struct param_list *next;	// Next param in list
 };
 
@@ -39,16 +40,19 @@ struct param_list {
 struct param_list *param_list_create(const char *name, struct type *type,
 	struct param_list *next);
 
-// Prints parameter list data
-void param_list_print(struct param_list *p);
+// Copy constructor for parameter list
+struct param_list *param_list_create_copy(struct param_list *p);
+
+// Name resolving during AST re-traversal for parameter lists
+// i.e. (have identifiers available for function code)
+int param_list_resolve(struct param_list *p);
 
 // Destructor for parameter list
 void param_list_free(struct param_list *p);
 
 // Declarations
 struct decl {
-	const char *name;			// Identifier
-	struct type *type;			// Type
+	struct symbol *symbol;		// Contains name, type, and is it local/global/parameter variable
 	struct expr *value;			// Initialization if declared
 	struct stmt *code;			// Code for functions
 	struct decl *next;			// Next declaration (if there is one)
@@ -58,8 +62,8 @@ struct decl {
 struct decl *decl_create(const char *name, struct type *type, struct expr *value,
 	struct stmt *code, struct decl *next);
 
-// Prints declaration data
-void decl_print(struct decl *d);
+// Name resolving during AST re-traversal for declarations
+int decl_resolve(struct decl *d);
 
 // Destructor for declarations
 void decl_free(struct decl *d);
@@ -91,8 +95,8 @@ struct stmt *stmt_create(stmt_t kind, struct decl *decl, struct expr *init_expr,
 	struct expr *expr, struct expr *next_expr, struct stmt *body,
 	struct stmt *else_body, struct stmt *next);
 
-// Prints statement data
-void stmt_print(struct stmt *s);
+// Name resolving during AST re-traversal for statements
+int stmt_resolve(struct stmt *s);
 
 // Destructor for statements
 void stmt_free(struct stmt *s);
@@ -128,12 +132,13 @@ typedef enum {
 } expr_t;
 
 struct expr {
-	expr_t kind;
-	struct expr *left;
-	struct expr *right;
-	const char *name;
-	int integer_value;
-	const char *string_literal;
+	expr_t kind;				// Type of expression
+	struct expr *left;			// Used if an expression is an operator
+	struct expr *right;			// Used if an expression is an operator
+	const char *name;			// Used if an identifier
+	int integer_value;			// Used if an integer literal, boolean, or character literal
+	const char *string_literal;	// Used if a string literal
+	struct symbol *symbol;		// Used for type checking/name resolution
 };
 
 // Constructor for expressions
@@ -146,11 +151,14 @@ struct expr *expr_create_char_literal(char c);
 struct expr *expr_create_string_literal(const char *str);
 struct expr *expr_create_boolean_literal(int b);
 
-// Prints expression data
-void expr_print(struct expr *e);
+// Name resolving during AST re-traversal for expressions
+int expr_resolve(struct expr *e);
 
 // Destructor for expressions
 void expr_free(struct expr *e);
 
-#endif /* DECL_H */
+// Resolves all names throughout the abstract syntax tree; to be called when AST is assembled
+int resolve_names(struct decl *d);
+
+#endif /* AST_H */
 

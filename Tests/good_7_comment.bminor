@@ -1,0 +1,8 @@
+// The C++ style end-of-line comment has higher precedence over C's multiline comment, but
+// since the C comment started first, it will encapsulate the // and thus prevent the hanging /*
+
+/* Blah blah blah
+// whoops */
+main:function integer () {
+	return 0;
+}

@@ -1,4 +1,4 @@
-// Wrong function syntax
+// Error: no return type
 f:function (x:integer, y:integer) {
 	return;
 }

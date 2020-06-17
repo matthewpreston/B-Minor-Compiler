@@ -1,0 +1,7 @@
+a:integer = 2 ^ 5 * 10 + 2 / 2;
+b:integer = (a - 3) * 3;
+
+main:function integer(argc:integer, argv:array [] array [] char) {
+	print "a:", a, "\nb:", b, "\n";
+	return 0;
+}

@@ -1,0 +1,11 @@
+// To test dangling else clause
+
+main:function integer (argc:integer, argv:array [] array [] char) {
+	i:boolean = true;
+	j:boolean = false;
+	k:boolean = false;
+
+	if (i == j) if (j == k) print "A"; else print "B";
+
+	return 0;
+}

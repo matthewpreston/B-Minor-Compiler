@@ -1,8 +1,8 @@
 // Global variables
-a:boolean = true;
-b:char = 'e';
+a:boolean = false;
+b:char = 'e; /* Error: Missing ' */
 c:integer = 32;
-d:string = "hello\n";
+d:string = "hello";
 e:array [5] integer = {1, 2, 3, 4, 5};
 
 /* Does nothing */

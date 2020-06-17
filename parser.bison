@@ -2,7 +2,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "decl.h"
+#include <string.h>
+#include "ast.h"
+#include "stack.h"
+#include "visualize_tree.h"
 
 extern int yylex();
 extern FILE *yyin;
@@ -12,6 +15,36 @@ void yyerror(const char *s);
 #include "type.h" // Defines YYSTYPE
 
 struct decl *result;
+
+// Have the declarations and param lists be linked correctly
+struct decl 	  *prev_decl;
+struct param_list *prev_param;
+
+// Have a stack track the previous statement (push if enters new scope, pop if leaving a scope)
+struct stack *prev_stmt_stack;
+
+// Helper functions for maintaining statement stack
+void init_stmt_stack() {
+	prev_stmt_stack = stack_create();
+}
+void enter_scope_stmt() {
+	stack_push(prev_stmt_stack, NULL);
+}
+void exit_scope_stmt() {
+	stack_pop(prev_stmt_stack);
+}
+void init_prev_stmt(struct stmt *new_stmt) {
+	stack_pop(prev_stmt_stack);
+	stack_push(prev_stmt_stack, new_stmt);
+}
+void link_prev_stmt(struct stmt *new_stmt) {
+	struct stmt *prev_stmt = (struct stmt *) stack_pop(prev_stmt_stack);
+	prev_stmt->next = new_stmt;
+	stack_push(prev_stmt_stack, (void *) new_stmt);
+}
+void free_stmt_stack() {
+	stack_free(prev_stmt_stack, free);
+}
 
 %}
 
@@ -44,41 +77,44 @@ struct decl *result;
 %token LC_PAREN '{' RC_PAREN '}' LR_PAREN '(' RR_PAREN ')' LS_PAREN '[' RS_PAREN ']'
 %token COLON ':' SEMICOLON ';' QUOTE '\'' DBQUOTE '\"' COMMA ','
 
-// Operator precendence
-%left '[' '('
-%left "++" "--"
-%right '!'
-%left '^'
-%left '*' '/' '%'
-%left '+' '-'
-%left '<' "<=" '>' ">=" "==" "!="
+// Operator precendence (lowest to highest)
+%left '='
 %left "&&" "||"
-%left '=' 
+%left '<' "<=" '>' ">=" "==" "!="
+%left '+' '-'
+%left '*' '/' '%'
+%left '^'
+%right '!'
+%left "++" "--"
+%left '[' '('
 
 // Terminal types
 %type <type>		basic_type array_type type return_type arr_ret_type
 %type <param_list>	param_list param
 %type <decl>		program decls decl variable function
-%type <stmt>		func_init func_body statement open_statement closed_statement simple_statement	comp_statement
-%type <expr>		basic_var_assign array_assign array_init for_init for_cond for_step print_body expr param_expr
+%type <stmt>		func_init comp_statement one_or_more_stmt statement open_statement closed_statement simple_statement	
+%type <expr>		basic_var_assign array_assign array_init one_or_more_expr nested_arr_init for_init for_cond for_step expr param_expr
 %type <ival>		INTEGER_LITERAL
 %type <cval>		CHAR_LITERAL
 %type <sval>		IDENTIFIER STRING_LITERAL
 
 %%
 
-program			: decls							{ result = $1; }
+program			: { init_stmt_stack(); } decls  { result = $2; free_stmt_stack(); }
 				;
-decls			: decls decl					{ $$ = $1; ($1)->next = $2; }
-				| decl							{ $$ = $1; }
+decls			: decl							{ $$ = $1; prev_decl = $1; }
+				| decls decl					{ $$ = $1; prev_decl->next = $2; prev_decl = $2; }
 				;
 decl			: variable ';'					{ $$ = $1; }
 				| function						{ $$ = $1; }
 				;
-variable		: IDENTIFIER ':' basic_type basic_var_assign
-												{ $$ = decl_create($1, $3, $4, NULL, NULL); }
-				| IDENTIFIER ':' "array" '[' INTEGER_LITERAL ']' array_type array_assign
-												{ $$ = decl_create($1,
+variable		: IDENTIFIER ':' 
+					basic_type
+					basic_var_assign			{ $$ = decl_create($1, $3, $4, NULL, NULL); }
+				| IDENTIFIER ':'
+					"array" 
+					'[' INTEGER_LITERAL ']'
+					array_type array_assign		{ $$ = decl_create($1,
 													type_create(TYPE_ARRAY, $7, NULL),
 													$8, NULL, NULL); }
 				;
@@ -91,103 +127,39 @@ basic_var_assign: %empty						{ $$ = NULL; }
 				| '=' expr						{ $$ = $2; }
 				;
 array_type		: type							{ $$ = $1; }
-				| "function" return_type '(' param_list ')'
-												{ $$ = type_create(TYPE_FUNCTION, $2, $4); }
+				| "function" return_type
+					'(' param_list ')'			{ $$ = type_create(TYPE_FUNCTION, $2, $4); }
 				;
 type			: basic_type					{ $$ = $1; }
-				| "array" '[' INTEGER_LITERAL ']' array_type
-												{ $$ = type_create(TYPE_ARRAY, $5, NULL); }
+				| "array"
+					'[' INTEGER_LITERAL ']'
+					array_type					{ $$ = type_create(TYPE_ARRAY, $5, NULL); }
 				;
 return_type		: basic_type					{ $$ = $1; }
 				| "void"						{ $$ = type_create(TYPE_VOID, NULL, NULL); }
 				| "array" '[' ']' arr_ret_type	{ $$ = type_create(TYPE_ARRAY, $4, NULL); }
-				| "function" return_type '(' param_list ')'
-												{ $$ = type_create(TYPE_FUNCTION, $2, $4); }
+				| "function" return_type
+					'(' param_list ')'			{ $$ = type_create(TYPE_FUNCTION, $2, $4); }
 				;
 arr_ret_type	: basic_type					{ $$ = $1; }
 				| "array" '[' ']' arr_ret_type	{ $$ = type_create(TYPE_ARRAY, $4, NULL); }
-				| "function" return_type '(' param_list ')'
-												{ $$ = type_create(TYPE_FUNCTION, $2, $4); }
+				| "function" return_type
+					'(' param_list ')'			{ $$ = type_create(TYPE_FUNCTION, $2, $4); }
 				;
 param_list		: %empty						{ $$ = NULL; }
-				| param							{ $$ = $1; }
-				| param_list ',' param			{ $$ = $1; ($1)->next = $3; }
+				| param							{ $$ = $1; prev_param = $1; }
+				| param_list ',' param			{ $$ = $1; prev_param->next = $3; prev_param = $3; }
 				;
 param			: IDENTIFIER ':' return_type	{ $$ = param_list_create($1, $3, NULL); }
 				;
 array_assign	: %empty						{ $$ = NULL; }
 				| '=' '{' array_init '}'		{ $$ = $3; }
 				;
-array_init		: expr							{ $$ = $1; }
-				| '{' array_init '}'			{ $$ = $2; }
-				| array_init ',' expr			{ $$ = expr_create(EXPR_ARG, $3, $1); }
+array_init		: one_or_more_expr				{ $$ = $1; }
+				| nested_arr_init				{ $$ = $1; }
 				;
-function		: IDENTIFIER ':' "function" return_type '(' param_list ')' func_init
-												{ $$ = decl_create($1,
-													type_create(TYPE_FUNCTION, $4, $6),
-													NULL, $8, NULL); }
-				;
-func_init		: ';'							{ $$ = NULL; }
-				| '{' func_body '}'				{ $$ = $2; }
-				;
-func_body		: comp_statement				{ $$ = $1; }
-				| %empty						{ $$ = NULL; }
-				;
-comp_statement	: statement						{ $$ = $1; }
-				| comp_statement statement		{ $$ = stmt_create(STMT_BLOCK, NULL, NULL, NULL,
-													NULL, $1, NULL, $2); }
-				;
-statement		: open_statement				{ $$ = $1; }
-				| closed_statement				{ $$ = $1; }
-				;
-open_statement	: "if" '(' expr ')' statement	{ $$ = stmt_create(STMT_IF_ELSE, NULL, NULL, $3,
-													NULL, $5, NULL, NULL); }
-				| "if" '(' expr ')' closed_statement "else" open_statement
-												{ $$ = stmt_create(STMT_IF_ELSE, NULL, NULL, $3,
-													NULL, $5, $7, NULL); }
-				| "while" '(' expr ')' open_statement
-												{ $$ = stmt_create(STMT_FOR, NULL, NULL, $3, NULL,
-													$5, NULL, NULL); }
-				| "for" '(' for_init ';' for_cond ';' for_step ')' open_statement
-												{ $$ = stmt_create(STMT_FOR, NULL, $3, $5, $7, $9,
-													NULL, NULL); }
-				;
-closed_statement: simple_statement
-												{ $$ = $1; }
-				| "if" '(' expr ')' closed_statement "else" closed_statement
-												{ $$ = stmt_create(STMT_IF_ELSE, NULL, NULL, $3,
-													NULL, $5, $7, NULL); }
-				| "while" '(' expr ')' closed_statement
-												{ $$ = stmt_create(STMT_FOR, NULL, NULL, $3, NULL,
-													$5, NULL, NULL); }
-				| "for" '(' for_init ';' for_cond ';' for_step ')' closed_statement
-												{ $$ = stmt_create(STMT_FOR, NULL, $3, $5, $7, $9,
-													NULL, NULL); }
-				; 
-simple_statement: decl							{ $$ = stmt_create(STMT_DECL, $1, NULL, NULL, NULL,
-													NULL, NULL, NULL); }
-				| expr ';'						{ $$ = stmt_create(STMT_EXPR, NULL, NULL, $1, NULL,
-													NULL, NULL, NULL); }
-				| "print" print_body ';'		{ $$ = stmt_create(STMT_PRINT, NULL, NULL, $2, NULL,
-													NULL, NULL, NULL); }
-				| "return" expr ';'				{ $$ = stmt_create(STMT_RETURN, NULL, NULL, $2,
-													NULL, NULL, NULL, NULL); }
-				| '{' '}'						{ $$ = NULL; }
-				| '{' comp_statement '}'		{ $$ = $2; }
-				;
-for_init		: %empty						{ $$ = NULL; }
-				| expr							{ $$ = expr_create(EXPR_ARG, $1, NULL); }
-				| for_init ',' expr				{ $$ = expr_create(EXPR_ARG, $3, $1); }
-				;
-for_cond		: %empty						{ $$ = NULL; }
-				| expr							{ $$ = $1; }
-				;
-for_step		: %empty						{ $$ = NULL; }
-				| expr							{ $$ = expr_create(EXPR_ARG, $1, NULL); }
-				| for_step ',' expr				{ $$ = expr_create(EXPR_ARG, $3, $1); }
-				;
-print_body		: expr							{ $$ = expr_create(EXPR_ARG, $1, NULL); }
-				| print_body ',' expr			{ $$ = expr_create(EXPR_ARG, $3, $1); }
+one_or_more_expr: expr							{ $$ = expr_create(EXPR_ARG, $1, NULL); }
+				| expr ',' one_or_more_expr		{ $$ = expr_create(EXPR_ARG, $1, $3); }
 				;
 expr			: IDENTIFIER					{ $$ = expr_create_identifier($1); }
 				| CHAR_LITERAL					{ $$ = expr_create_char_literal($1); }
@@ -219,8 +191,85 @@ expr			: IDENTIFIER					{ $$ = expr_create_identifier($1); }
 				| expr "--"						{ $$ = expr_create(EXPR_DEC, $1, NULL); }
 				;
 param_expr		: %empty						{ $$ = NULL; }
-				| expr							{ $$ = expr_create(EXPR_ARG, $1, NULL); }
-				| param_expr ',' expr			{ $$ = expr_create(EXPR_ARG, $3, $1); }
+				| one_or_more_expr				{ $$ = $1; }
+				;
+nested_arr_init : '{' array_init '}'			{ $$ = $2; }
+				| nested_arr_init
+					',' '{' array_init '}'		{ $$ = expr_create(EXPR_ARG, $1, $4); }
+				;
+function		: IDENTIFIER ':'
+					"function" return_type
+					'(' param_list ')'
+					func_init					{ $$ = decl_create($1,
+													type_create(TYPE_FUNCTION, $4, $6),
+													NULL, $8, NULL); }
+				;
+func_init		: ';'							{ $$ = NULL; }
+				| scope_enter comp_statement '}'{ $$ = stmt_create(STMT_BLOCK, NULL, NULL, NULL,
+													NULL, $2, NULL, NULL);
+												  exit_scope_stmt(); }
+				;
+scope_enter		: '{'							{ enter_scope_stmt(); }
+				;
+comp_statement	: %empty						{ $$ = NULL; }
+				| one_or_more_stmt				{ $$ = $1; }
+				;
+one_or_more_stmt: statement						{ $$ = $1; init_prev_stmt($1); }
+				| one_or_more_stmt statement	{ $$ = $1; link_prev_stmt($2); }
+				;
+statement		: open_statement				{ $$ = $1; }
+				| closed_statement				{ $$ = $1; }
+				;
+open_statement	: "if" '(' expr ')' statement	{ $$ = stmt_create(STMT_IF_ELSE, NULL, NULL, $3,
+													NULL, $5, NULL, NULL); }
+				| "if" '(' expr ')'
+					closed_statement
+					"else" open_statement		{ $$ = stmt_create(STMT_IF_ELSE, NULL, NULL, $3,
+													NULL, $5, $7, NULL); }
+				| "while" '(' expr ')'
+					open_statement				{ $$ = stmt_create(STMT_FOR, NULL, NULL, $3, NULL,
+													$5, NULL, NULL); }
+				| "for" '(' for_init ';'
+					for_cond ';'
+					for_step ')'
+					open_statement				{ $$ = stmt_create(STMT_FOR, NULL, $3, $5, $7, $9,
+													NULL, NULL); }
+				;
+closed_statement: simple_statement				{ $$ = $1; }
+				| "if" '(' expr ')'
+					closed_statement
+					"else" closed_statement		{ $$ = stmt_create(STMT_IF_ELSE, NULL, NULL, $3,
+													NULL, $5, $7, NULL); }
+				| "while" '(' expr ')'
+					closed_statement			{ $$ = stmt_create(STMT_FOR, NULL, NULL, $3, NULL,
+													$5, NULL, NULL); }
+				| "for" '(' for_init ';'
+					for_cond ';'
+					for_step ')'
+					closed_statement			{ $$ = stmt_create(STMT_FOR, NULL, $3, $5, $7, $9,
+													NULL, NULL); }
+				; 
+simple_statement: decl							{ $$ = stmt_create(STMT_DECL, $1, NULL, NULL, NULL,
+													NULL, NULL, NULL); }
+				| expr ';'						{ $$ = stmt_create(STMT_EXPR, NULL, NULL, $1, NULL,
+													NULL, NULL, NULL); }
+				| "print" one_or_more_expr ';'	{ $$ = stmt_create(STMT_PRINT, NULL, NULL, $2, NULL,
+													NULL, NULL, NULL); }
+				| "return" expr ';'				{ $$ = stmt_create(STMT_RETURN, NULL, NULL, $2,
+													NULL, NULL, NULL, NULL); }
+				| scope_enter comp_statement '}'{ $$ = stmt_create(STMT_BLOCK, NULL, NULL, NULL,
+													NULL, $2, NULL, NULL);
+												  exit_scope_stmt(); }
+				;
+for_init		: %empty						{ $$ = NULL; }
+				| one_or_more_expr				{ $$ = $1; }
+				;
+for_cond		: %empty						{ $$ = NULL; }
+				| expr							{ $$ = $1; }
+				;
+for_step		: %empty						{ $$ = NULL; }
+				| one_or_more_expr				{ $$ = $1; }
+				;
 
 %%
 
@@ -230,7 +279,28 @@ void yyerror(const char *s)
   extern char *yytext;	// Defined and maintained in scanner.c
   
   fprintf(stderr, "ERROR: %s at symbol \"%s\" on line %d\n", s, yytext, yylineno);
-  exit(1);
+}
+
+#define PRINT_WIDTH 70
+
+// Crude function to print a string, followed by dashes, followed by "PASS" or "FAIL".
+// Assumes that user will have a str less than the maximum width.
+void pretty_print(const char *s) {
+	int num_dashes = PRINT_WIDTH - strlen(s) - 6;
+	if (num_dashes < 0) { // String is too long
+		printf("%s ", s);
+	} else {			  // Pad with dashes
+		char *dashes = malloc(sizeof(char) * (num_dashes + 1));
+		if (dashes != NULL) {
+			for (int i = 0; i < num_dashes; i++)
+				dashes[i] = '-';
+			dashes[num_dashes] = '\0';
+			printf("%s %s ", s, dashes);
+			free(dashes);
+		} else { // Malloc failed, do whatever
+			printf("%s ", s);
+		}
+	}
 }
 
 int main(int argc, char *argv[]) {
@@ -240,17 +310,40 @@ int main(int argc, char *argv[]) {
 	
 	yyin = fopen(inputFile, "r");
 	if (!yyin) {
-		printf("Could not open: %s\n", inputFile);
+		fprintf(stderr, "Could not open: %s\n", inputFile);
 		return 1;
 	}
 	
-	if (yyparse()==0) {
-		printf("Parse successful!\n");
+	// Parse the program
+	pretty_print("Parsing the program");
+	if (yyparse() == 0) { 	// If successful
+		printf("PASS\n");
+	
+		// Print out AST in SVG for visualization
+		char *svgFile = malloc(strlen(inputFile) + 5);
+		sprintf(svgFile, "%s.svg", inputFile);
+		
+		visualize_tree(result, svgFile);
+		
+		free(svgFile);
+	} else {				// If unsuccessful
+		printf("FAIL\n");
+		fprintf(stderr, "Parse unsuccessful :c\n");
+		exit(1);
+	}
+	fclose(yyin);
+	
+	// Perform name resolution and type checking
+	pretty_print("Performing semantic analysis");
+	if (resolve_names(result) == 0) {
+		printf("PASS\n");
 	} else {
-		printf("Parse unsuccessful :c\n");
+		printf("FAIL\n");
+		fprintf(stderr, "Semantic analysis failed :c\n");
+		exit(1);
 	}
 	
-	fclose(yyin);
+	printf("Front end successful c:\n");
 	decl_free(result); // Free up AST
 	return 0;
 }

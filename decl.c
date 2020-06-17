@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include "decl.h"
 
@@ -159,6 +160,44 @@ struct expr *expr_create_boolean_literal(int b) {
 	e->right = NULL;
 	e->integer_value = b;
 	return e;
+}
+
+// Prints expression data
+void expr_print(struct expr *e) {
+	if (e == NULL) return;
+	
+	if (e->left != NULL) expr_print(e->left);
+	
+	switch (e->kind) {
+		case EXPR_IDENTIFIER:		printf("%s", e->name); break;
+		case EXPR_INTEGER_LITERAL:	printf("%d", e->integer_value); break;
+		case EXPR_CHAR_LITERAL:		printf("%c", (char) e->integer_value); break;
+		case EXPR_STRING_LITERAL:	printf("%s", e->string_literal); break;
+		case EXPR_BOOLEAN_LITERAL:	if (e->integer_value == 0) printf("false"); else printf("true"); 										break;
+		case EXPR_SUBSCRIPT:		printf(""); break;
+		case EXPR_CALL:
+		case EXPR_ARG:
+		case EXPR_ASSIGN:
+		case EXPR_ADD:
+		case EXPR_SUB:
+		case EXPR_MUL:
+		case EXPR_DIV:
+		case EXPR_MOD:
+		case EXPR_EXP:
+		case EXPR_AND:
+		case EXPR_OR:
+		case EXPR_LT:
+		case EXPR_LT_EQ:
+		case EXPR_GT:
+		case EXPR_GT_EQ:
+		case EXPR_IS_EQ:
+		case EXPR_IS_NEQ:
+		case EXPR_NOT:
+		case EXPR_INC:
+		case EXPR_DEC:
+	}
+	
+	if (e->right != NULL) expr_print(e->right);
 }
 
 // Destructor for expressions

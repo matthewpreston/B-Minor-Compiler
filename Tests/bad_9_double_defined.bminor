@@ -1,0 +1,6 @@
+i:integer = 1;
+
+// Error: i already defined in this scope
+i:integer = 4;
+
+main:function void () {}

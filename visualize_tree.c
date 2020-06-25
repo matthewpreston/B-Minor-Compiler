@@ -77,13 +77,13 @@ Agnode_t *visualize_decl(Agraph_t *g, struct decl *d) {
 	if (d == NULL) return NULL;
 
 	// Add decl node
-	char *temp = malloc(strlen(d->symbol->name) + 8);
-	sprintf(temp, "DECL \"%s\"", d->symbol->name);
+	char *temp = malloc(strlen(d->name) + 8);
+	sprintf(temp, "DECL \"%s\"", d->name);
 	Agnode_t *decl = make_node(g, temp);
 	free(temp);
 	
 	// Add type node(s) and edge
-	Agnode_t *type = visualize_type(g, d->symbol->type);	
+	Agnode_t *type = visualize_type(g, d->type);	
 	make_edge(g, decl, type, "type");
 
 	// If initialized, add expr node(s) + edge
@@ -93,7 +93,7 @@ Agnode_t *visualize_decl(Agraph_t *g, struct decl *d) {
 	}
 	
 	// If a function, add stmt node(s) + edge
-	if (d->symbol->type->kind == TYPE_FUNCTION && d->code != NULL) {
+	if (d->type->kind == TYPE_FUNCTION && d->code != NULL) {
 		Agnode_t *code = visualize_stmt(g, d->code);
 		make_edge(g, decl, code, "code");
 	}
@@ -164,13 +164,13 @@ Agnode_t *visualize_param_list(Agraph_t *g, struct param_list *p) {
 	Agnode_t *param = make_node(g, "PARAM");
 	
 	// Add name + edge
-	char *temp = strdup(p->symbol->name);
+	char *temp = strdup(p->name);
 	Agnode_t *name = make_node(g, temp);					
 	free(temp);	
 	make_edge(g, param, name, "name");
 	
 	// Add type + edge
-	Agnode_t *type = visualize_type(g, p->symbol->type);
+	Agnode_t *type = visualize_type(g, p->type);
 	make_edge(g, param, type, "type");
 	
 	// Recurse to next param
@@ -239,8 +239,10 @@ Agnode_t *visualize_stmt(Agraph_t *g, struct stmt *s) {
 			break;
 		case STMT_RETURN:
 			stmt = make_node(g, "STMT_RETURN");
-			expr = visualize_expr(g, s->expr);
-			make_edge(g, stmt, expr, "expr");
+			if (s->expr != NULL) {
+				expr = visualize_expr(g, s->expr);
+				make_edge(g, stmt, expr, "expr");
+			}
 			break;
 		case STMT_BLOCK:
 			stmt = make_node(g, "STMT_BLOCK");
@@ -303,7 +305,12 @@ Agnode_t *visualize_expr(Agraph_t *g, struct expr *e) {
 			break;
 		case EXPR_STRING_LITERAL:
 			expr = make_node(g, "EXPR_STRING_LITERAL");
-			temp = strdup(e->string_literal);
+			if (e->string_literal == NULL) {
+				temp = malloc(sizeof("NULL") + 1);
+				strcpy(temp, "NULL");
+			} else {
+				temp = strdup(e->string_literal);
+			}
 			string_literal = make_node(g, temp);
 			free(temp);
 			make_edge(g, expr, string_literal, "string_literal");

@@ -1,58 +1,12 @@
 #ifndef AST_H
 #define AST_H
 
-#include "symbol.h"
-
-// Atomic types
-typedef enum {
-	TYPE_VOID,
-	TYPE_BOOLEAN,
-	TYPE_CHAR,
-	TYPE_INTEGER,
-	TYPE_STRING,
-	TYPE_ARRAY,
-	TYPE_FUNCTION
-} type_t;
-
-struct type {
-	type_t kind;
-	struct type *subtype;		// For arrays, return type for functions
-	struct param_list *params;	// For functions
-};
-
-// Constructor for type
-struct type *type_create(type_t kind, struct type *subtype,
-	struct param_list *params);
-
-// Copy constructor for type
-struct type *type_create_copy(struct type *t);
-
-// Destructor for type
-void type_free(struct type *t);
-
-// Parameter list for functions
-struct param_list {
-	struct symbol *symbol;		// Contains name and type
-	struct param_list *next;	// Next param in list
-};
-
-// Constructor for parameter list
-struct param_list *param_list_create(const char *name, struct type *type,
-	struct param_list *next);
-
-// Copy constructor for parameter list
-struct param_list *param_list_create_copy(struct param_list *p);
-
-// Name resolving during AST re-traversal for parameter lists
-// i.e. (have identifiers available for function code)
-int param_list_resolve(struct param_list *p);
-
-// Destructor for parameter list
-void param_list_free(struct param_list *p);
+#include "ast_type.h"
 
 // Declarations
 struct decl {
-	struct symbol *symbol;		// Contains name, type, and is it local/global/parameter variable
+	const char *name;			// Identifier
+	struct type *type;			// Its Type
 	struct expr *value;			// Initialization if declared
 	struct stmt *code;			// Code for functions
 	struct decl *next;			// Next declaration (if there is one)
@@ -64,6 +18,9 @@ struct decl *decl_create(const char *name, struct type *type, struct expr *value
 
 // Name resolving during AST re-traversal for declarations
 int decl_resolve(struct decl *d);
+
+// Performs typechecking on the declarations in the AST
+void decl_typecheck(struct decl *d, int *error_count);
 
 // Destructor for declarations
 void decl_free(struct decl *d);
@@ -83,9 +40,11 @@ struct stmt {
 	stmt_t kind;
 	struct decl *decl;			// Local declaration statement
 	struct expr *init_expr;		// For initialization
-	struct expr *expr;			// Conditional expression (i.e. if, while, for)
+	struct expr *expr;			// Conditional expression (i.e. if, while, for);
+								// Also arguments for print and return
 	struct expr *next_expr;		// For step
-	struct stmt *body;			// Executed if condition (i.e. if, while, for)
+	struct stmt *body;			// Executed if condition (i.e. if, while, for);
+								// Also contents of a block statement
 	struct stmt *else_body;		// Else body for if statement
 	struct stmt *next;			// Next statement
 };
@@ -97,6 +56,11 @@ struct stmt *stmt_create(stmt_t kind, struct decl *decl, struct expr *init_expr,
 
 // Name resolving during AST re-traversal for statements
 int stmt_resolve(struct stmt *s);
+
+// Performs typechecking on the statements in the AST. Provide the name and return type
+// of the function as to type check whether the function actually returns that type
+void stmt_typecheck(struct stmt *s, const char* name, struct type *return_type,
+					int *error_count);
 
 // Destructor for statements
 void stmt_free(struct stmt *s);
@@ -132,13 +96,14 @@ typedef enum {
 } expr_t;
 
 struct expr {
-	expr_t kind;				// Type of expression
-	struct expr *left;			// Used if an expression is an operator
-	struct expr *right;			// Used if an expression is an operator
-	const char *name;			// Used if an identifier
-	int integer_value;			// Used if an integer literal, boolean, or character literal
-	const char *string_literal;	// Used if a string literal
-	struct symbol *symbol;		// Used for type checking/name resolution
+	expr_t kind;					// Type of expression
+	struct expr *left;				// Used if an expression is an operator
+	struct expr *right;				// Used if an expression is an operator
+	union {
+		const char *name;			// Used if an identifier
+		int integer_value;			// Used if an integer literal, boolean, or character literal
+		const char *string_literal;	// Used if a string literal
+	};
 };
 
 // Constructor for expressions
@@ -151,14 +116,32 @@ struct expr *expr_create_char_literal(char c);
 struct expr *expr_create_string_literal(const char *str);
 struct expr *expr_create_boolean_literal(int b);
 
+// Copy constructor for expressions
+struct expr *expr_create_copy(struct expr *e);
+
 // Name resolving during AST re-traversal for expressions
 int expr_resolve(struct expr *e);
+
+// Performs typechecking on the expressions in the AST. Returns the "expected"
+// type (especially if there's conflicting types, an error message will be emitted
+// and the expected type will be returned)
+struct type *expr_typecheck(struct expr *e, int *error_count);
 
 // Destructor for expressions
 void expr_free(struct expr *e);
 
-// Resolves all names throughout the abstract syntax tree; to be called when AST is assembled
-int resolve_names(struct decl *d);
+/*
+ * ===== WHEN DONE PERFORMING AST CONSTRUCTION =================================
+ */
+
+// Performs name resolution and type checking on AST. Returns number of errors.
+int perform_semantic_analysis(struct decl *ast);
+
+// Custom printf family for printing types, expressions, etc.
+int ast_vfprintf(FILE *stream, const char *fmt, va_list args);
+int ast_vprintf(const char *fmt, va_list args);
+int ast_fprintf(FILE *stream, const char *fmt, ...);
+int ast_printf(const char *fmt, ...);
 
 #endif /* AST_H */
 

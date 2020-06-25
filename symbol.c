@@ -2,11 +2,11 @@
 #include "symbol.h"
 
 // Constructor for symbols
-struct symbol *symbol_create(symbol_t kind, struct type *type, const char *name) {
+struct symbol *symbol_create(symbol_t kind, const char *name, struct type *type) {
 	struct symbol *s = malloc(sizeof(struct symbol));
 	s->kind = kind;
-	s->type = type;
 	s->name = name;
+	s->type = type;
 	return s;
 }
 

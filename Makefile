@@ -1,9 +1,9 @@
 CC = gcc
 CFLAGS = -Wall -g
 LDFLAGS=`pkg-config libgvc --libs`
-OBJECTS = hash_table.o stack.o ast.o symbol.o scope.o visualize_tree.o parser.o scanner.o
+OBJECTS = hash_table.o stack.o ast_type.o symbol.o scope.o ast.o visualize_tree.o parser.o scanner.o
 TARGET = bminor
-SOURCE_FILES = Makefile test_cases.sh type.h scanner.flex parser.bison ast.h ast.c visualize_tree.h visualize_tree.c hash_table.h hash_table.c stack.h stack.c symbol.h symbol.c scope.h scope.c
+SOURCE_FILES = Makefile test_cases.sh type.h scanner.flex parser.bison ast_type.h ast_type.c ast.h ast.c visualize_tree.h visualize_tree.c hash_table.h hash_table.c stack.h stack.c symbol.h symbol.c scope.h scope.c
 
 $(TARGET): $(OBJECTS)
 	$(CC) $(CFLAGS) -o $@ $(OBJECTS) $(LDFLAGS)
@@ -13,12 +13,13 @@ hash_table.o: hash_table.h
 stack.o: stack.h
 
 # Dependencies for parser
-ast.o: ast.h symbol.h scope.h
-symbol.o: symbol.h ast.h
-scope.o: scope.h hash_table.h stack.h symbol.h ast.h
+ast_type.o: ast_type.h scope.h stack.h symbol.h
+symbol.o: symbol.h ast_type.h
+scope.o: scope.h hash_table.h stack.h symbol.h
+ast.o: ast.h ast_type.h scope.h stack.h symbol.h
 
 # A debugging tool for visualizing the abstract syntax tree
-visualize_tree.o: visualize_tree.h ast.h
+visualize_tree.o: visualize_tree.c visualize_tree.h ast.h
 	$(CC) $(CFLAGS) `pkg-config libgvc --cflags` -c -o $@ visualize_tree.c
 
 # The actual parser and scanner

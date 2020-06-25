@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include "hash_table.h"
 #include "stack.h"
-#include "ast.h"
 #include "scope.h"
 
 struct stack *GLOBAL_SCOPES; // To be initialized in other source files
@@ -43,7 +42,7 @@ void scope_bind(const char *name, struct symbol *sym) {
 	struct hash_table *current_scope = (struct hash_table *) stack_top(GLOBAL_SCOPES);
 	
 	// Create a copy of the symbol and insert
-	struct symbol *s = symbol_create(sym->kind, type_create_copy(sym->type), sym->name);
+	struct symbol *s = symbol_create(sym->kind, sym->name, type_create_copy(sym->type));
 	hash_table_insert(current_scope, name, (void *) s);
 }
 

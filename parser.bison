@@ -93,7 +93,7 @@ void free_stmt_stack() {
 %type <param_list>	param_list param
 %type <decl>		program decls decl variable function
 %type <stmt>		func_init comp_statement one_or_more_stmt statement open_statement closed_statement simple_statement	
-%type <expr>		basic_var_assign array_assign array_init one_or_more_expr nested_arr_init for_init for_cond for_step expr param_expr
+%type <expr>		basic_var_assign array_assign array_init one_or_more_expr nested_arr_init for_init for_cond for_step expr param_expr zero_or_one_expr
 %type <ival>		INTEGER_LITERAL
 %type <cval>		CHAR_LITERAL
 %type <sval>		IDENTIFIER STRING_LITERAL
@@ -114,37 +114,36 @@ variable		: IDENTIFIER ':'
 				| IDENTIFIER ':'
 					"array" 
 					'[' INTEGER_LITERAL ']'
-					array_type array_assign		{ $$ = decl_create($1,
-													type_create(TYPE_ARRAY, $7, NULL),
-													$8, NULL, NULL); }
+					array_type array_assign		{ $$ = decl_create($1, type_create_array($7, $5),
+													               $8, NULL, NULL); }
 				;
-basic_type		: "boolean"						{ $$ = type_create(TYPE_BOOLEAN, NULL, NULL); }
-				| "char"						{ $$ = type_create(TYPE_CHAR, NULL, NULL); }
-				| "integer"						{ $$ = type_create(TYPE_INTEGER, NULL, NULL); }
-				| "string"						{ $$ = type_create(TYPE_STRING, NULL, NULL); }
+basic_type		: "boolean"						{ $$ = type_create_basic(TYPE_BOOLEAN); }
+				| "char"						{ $$ = type_create_basic(TYPE_CHAR); }
+				| "integer"						{ $$ = type_create_basic(TYPE_INTEGER); }
+				| "string"						{ $$ = type_create_basic(TYPE_STRING); }
 				;
 basic_var_assign: %empty						{ $$ = NULL; }
 				| '=' expr						{ $$ = $2; }
 				;
 array_type		: type							{ $$ = $1; }
 				| "function" return_type
-					'(' param_list ')'			{ $$ = type_create(TYPE_FUNCTION, $2, $4); }
+					'(' param_list ')'			{ $$ = type_create_function($2, $4); }
 				;
 type			: basic_type					{ $$ = $1; }
 				| "array"
 					'[' INTEGER_LITERAL ']'
-					array_type					{ $$ = type_create(TYPE_ARRAY, $5, NULL); }
+					array_type					{ $$ = type_create_array($5, $3); }
 				;
 return_type		: basic_type					{ $$ = $1; }
-				| "void"						{ $$ = type_create(TYPE_VOID, NULL, NULL); }
-				| "array" '[' ']' arr_ret_type	{ $$ = type_create(TYPE_ARRAY, $4, NULL); }
+				| "void"						{ $$ = type_create_basic(TYPE_VOID); }
+				| "array" '[' ']' arr_ret_type	{ $$ = type_create_array($4, -1); }
 				| "function" return_type
-					'(' param_list ')'			{ $$ = type_create(TYPE_FUNCTION, $2, $4); }
+					'(' param_list ')'			{ $$ = type_create_function($2, $4); }
 				;
 arr_ret_type	: basic_type					{ $$ = $1; }
-				| "array" '[' ']' arr_ret_type	{ $$ = type_create(TYPE_ARRAY, $4, NULL); }
+				| "array" '[' ']' arr_ret_type	{ $$ = type_create_array($4, -1); }
 				| "function" return_type
-					'(' param_list ')'			{ $$ = type_create(TYPE_FUNCTION, $2, $4); }
+					'(' param_list ')'			{ $$ = type_create_function($2, $4); }
 				;
 param_list		: %empty						{ $$ = NULL; }
 				| param							{ $$ = $1; prev_param = $1; }
@@ -185,7 +184,8 @@ expr			: IDENTIFIER					{ $$ = expr_create_identifier($1); }
 				| expr ">=" expr				{ $$ = expr_create(EXPR_GT_EQ, $1, $3); }
 				| expr "==" expr				{ $$ = expr_create(EXPR_IS_EQ, $1, $3); }
 				| expr "!=" expr				{ $$ = expr_create(EXPR_IS_NEQ, $1, $3); }
-				| '-' expr			%prec '!'	{ $$ = expr_create(EXPR_SUB, 0, $2); }
+				| '-' expr			%prec '!'	{ $$ = expr_create(EXPR_SUB,
+												    expr_create_integer_literal(0), $2); }
 				| '!' expr						{ $$ = expr_create(EXPR_NOT, $2, NULL); }
 				| expr "++"						{ $$ = expr_create(EXPR_INC, $1, NULL); }
 				| expr "--"						{ $$ = expr_create(EXPR_DEC, $1, NULL); }
@@ -199,17 +199,18 @@ nested_arr_init : '{' array_init '}'			{ $$ = $2; }
 				;
 function		: IDENTIFIER ':'
 					"function" return_type
+					scope_enter
 					'(' param_list ')'
-					func_init					{ $$ = decl_create($1,
-													type_create(TYPE_FUNCTION, $4, $6),
-													NULL, $8, NULL); }
-				;
-func_init		: ';'							{ $$ = NULL; }
-				| scope_enter comp_statement '}'{ $$ = stmt_create(STMT_BLOCK, NULL, NULL, NULL,
-													NULL, $2, NULL, NULL);
+					func_init
+					/* scope_exit */			{ $$ = decl_create($1, type_create_function($4, $7),
+													NULL, $9, NULL);
 												  exit_scope_stmt(); }
 				;
-scope_enter		: '{'							{ enter_scope_stmt(); }
+scope_enter		: %empty						{ enter_scope_stmt(); }
+				;
+func_init		: ';'							{ $$ = NULL; }
+				| '{' comp_statement '}'		{ $$ = stmt_create(STMT_BLOCK, NULL, NULL, NULL,
+													NULL, $2, NULL, NULL); }
 				;
 comp_statement	: %empty						{ $$ = NULL; }
 				| one_or_more_stmt				{ $$ = $1; }
@@ -226,7 +227,7 @@ open_statement	: "if" '(' expr ')' statement	{ $$ = stmt_create(STMT_IF_ELSE, NU
 					closed_statement
 					"else" open_statement		{ $$ = stmt_create(STMT_IF_ELSE, NULL, NULL, $3,
 													NULL, $5, $7, NULL); }
-				| "while" '(' expr ')'
+				| "while" '(' for_cond ')'
 					open_statement				{ $$ = stmt_create(STMT_FOR, NULL, NULL, $3, NULL,
 													$5, NULL, NULL); }
 				| "for" '(' for_init ';'
@@ -240,7 +241,7 @@ closed_statement: simple_statement				{ $$ = $1; }
 					closed_statement
 					"else" closed_statement		{ $$ = stmt_create(STMT_IF_ELSE, NULL, NULL, $3,
 													NULL, $5, $7, NULL); }
-				| "while" '(' expr ')'
+				| "while" '(' for_cond ')'
 					closed_statement			{ $$ = stmt_create(STMT_FOR, NULL, NULL, $3, NULL,
 													$5, NULL, NULL); }
 				| "for" '(' for_init ';'
@@ -255,10 +256,13 @@ simple_statement: decl							{ $$ = stmt_create(STMT_DECL, $1, NULL, NULL, NULL,
 													NULL, NULL, NULL); }
 				| "print" one_or_more_expr ';'	{ $$ = stmt_create(STMT_PRINT, NULL, NULL, $2, NULL,
 													NULL, NULL, NULL); }
-				| "return" expr ';'				{ $$ = stmt_create(STMT_RETURN, NULL, NULL, $2,
+				| "return" zero_or_one_expr ';'	{ $$ = stmt_create(STMT_RETURN, NULL, NULL, $2,
 													NULL, NULL, NULL, NULL); }
-				| scope_enter comp_statement '}'{ $$ = stmt_create(STMT_BLOCK, NULL, NULL, NULL,
-													NULL, $2, NULL, NULL);
+								
+				| scope_enter
+				  '{' comp_statement '}'
+				  /* scope_exit */				{ $$ = stmt_create(STMT_BLOCK, NULL, NULL, NULL,
+													NULL, $3, NULL, NULL);
 												  exit_scope_stmt(); }
 				;
 for_init		: %empty						{ $$ = NULL; }
@@ -269,6 +273,9 @@ for_cond		: %empty						{ $$ = NULL; }
 				;
 for_step		: %empty						{ $$ = NULL; }
 				| one_or_more_expr				{ $$ = $1; }
+				;
+zero_or_one_expr: %empty						{ $$ = NULL; }
+				| expr							{ $$ = $1; }
 				;
 
 %%
@@ -335,9 +342,9 @@ int main(int argc, char *argv[]) {
 	
 	// Perform name resolution and type checking
 	pretty_print("Performing semantic analysis");
-	if (resolve_names(result) == 0) {
+	if (perform_semantic_analysis(result) == 0) { // If successful
 		printf("PASS\n");
-	} else {
+	} else {						 			  // If unsuccessful
 		printf("FAIL\n");
 		fprintf(stderr, "Semantic analysis failed :c\n");
 		exit(1);

@@ -1,2 +1,2 @@
 // Error: setting a variable to a name that doesn't exist
-i:integer = b;
+i:integer = i;

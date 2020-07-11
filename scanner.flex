@@ -17,7 +17,7 @@ char *strip_quotes_str(const char *token, int token_length) {
 
 %}
 
-INTEGER	(0|[1-9][0-9]*)	
+INTEGER	(-)?(0|[1-9][0-9]*)	
 ID		[a-zA-Z][a-zA-Z0-9_]*
 
 %%

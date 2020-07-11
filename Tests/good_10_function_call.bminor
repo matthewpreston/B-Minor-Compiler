@@ -1,0 +1,57 @@
+/*
+ * Too lazy to make array sizes with compile time expressions, so just magic numbers
+ * and dumb temporary arrays
+ */
+
+min:function integer (a:integer, b:integer) {
+	if (a < b) return a; else return b;
+}
+
+// Zips two arrays of integers into one array containing with each entry containing a pair,
+// i.e. an array of size 2
+zip:function array [] array [] integer (a1:array [] integer, size1:integer,
+										a2:array [] integer, size2:integer,
+										result:array [] array [] integer, result_size:integer)
+{
+	min_size:integer = min(result_size, min(size1, size2));
+	i:integer;
+	for (i = 0; i < min_size; i++) {
+		temp:array [2] integer;
+		temp[0] = a1[i];
+		temp[1] = a2[i];
+		result[i] = temp;
+	}	
+	return result;
+}
+
+// Maps function to array of pairs of integers
+map_pair:function array [] integer (f:function integer (i:integer, j:integer),
+									a:array [] array [] integer,
+									size:integer,
+									result:array [] integer)
+{
+	i:integer;
+	for (i = 0; i < size; i++)
+		result[i] = f(a[i][0], a[i][1]);
+	return result;
+}
+
+// Adds 2 numbers
+add:function integer (i:integer, j:integer) {
+	return i + j;
+}
+
+main:function integer (argc:integer, argv:array [] array [] char) {
+	a1:array [5] integer = {1, 2, 3, 4, 5};
+	a2:array [5] integer = {1, 2, 3, 4, 5};
+	pairs:array [5] array [2] integer;
+	result:array [5] integer;
+
+	// Add a1 and a2 together and store in result
+	map_pair(add, zip(a1, 5, a2, 5, pairs, 5), 5, result);
+	
+	i:integer;
+	for (i = 0; i < 5; i++)
+		print a1[i], "+", a2[i], "=", result[i];
+	return 0;
+}

@@ -154,7 +154,7 @@ param			: IDENTIFIER ':' return_type	{ $$ = param_list_create($1, $3, NULL); }
 array_assign	: %empty						{ $$ = NULL; }
 				| '=' '{' array_init '}'		{ $$ = $3; }
 				;
-array_init		: one_or_more_expr				{ $$ = $1; }
+array_init		: one_or_more_expr				{ $$ = expr_create(EXPR_ARRAY, $1, NULL); }
 				| nested_arr_init				{ $$ = $1; }
 				;
 one_or_more_expr: expr							{ $$ = expr_create(EXPR_ARG, $1, NULL); }

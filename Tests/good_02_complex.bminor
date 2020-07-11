@@ -19,8 +19,8 @@ f2:function integer (x:integer, y:integer) {
 }
 
 /* Testing arrays */
-f3:function array [] function integer (x:integer, y:integer, z:integer) (b:boolean) {
-	a: array [4] function integer (x:integer, y:integer, z:integer) = {f2, f2, f2, f2};
+f3:function array [] function integer (x:integer, y:integer) (b:boolean) {
+	a: array [4] function integer (x:integer, y:integer) = {f2, f2, f2, f2};
 	return a;
 }
 

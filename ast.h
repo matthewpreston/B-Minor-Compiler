@@ -16,11 +16,8 @@ struct decl {
 struct decl *decl_create(const char *name, struct type *type, struct expr *value,
 	struct stmt *code, struct decl *next);
 
-// Name resolving during AST re-traversal for declarations
-int decl_resolve(struct decl *d);
-
-// Performs typechecking on the declarations in the AST
-void decl_typecheck(struct decl *d, int *error_count);
+// Performs name resolution and typechecking on the declarations in the AST
+void decl_semantic_check(struct decl *d, int *error_count);
 
 // Destructor for declarations
 void decl_free(struct decl *d);
@@ -54,13 +51,11 @@ struct stmt *stmt_create(stmt_t kind, struct decl *decl, struct expr *init_expr,
 	struct expr *expr, struct expr *next_expr, struct stmt *body,
 	struct stmt *else_body, struct stmt *next);
 
-// Name resolving during AST re-traversal for statements
-int stmt_resolve(struct stmt *s);
-
-// Performs typechecking on the statements in the AST. Provide the name and return type
-// of the function as to type check whether the function actually returns that type
-void stmt_typecheck(struct stmt *s, const char* name, struct type *return_type,
-					int *error_count);
+// Performs name resolution and typechecking on the statements in the AST. Provide
+// the name and return type of the function as to type check whether the function
+// actually returns that type
+void stmt_semantic_check(struct stmt *s, const char* name, struct type *return_type,
+						 int *error_count);
 
 // Destructor for statements
 void stmt_free(struct stmt *s);
@@ -72,6 +67,7 @@ typedef enum {
 	EXPR_CHAR_LITERAL,
 	EXPR_STRING_LITERAL,
 	EXPR_BOOLEAN_LITERAL,
+	EXPR_ARRAY,
 	EXPR_SUBSCRIPT,
 	EXPR_CALL,
 	EXPR_ARG,
@@ -119,13 +115,10 @@ struct expr *expr_create_boolean_literal(int b);
 // Copy constructor for expressions
 struct expr *expr_create_copy(struct expr *e);
 
-// Name resolving during AST re-traversal for expressions
-int expr_resolve(struct expr *e);
-
-// Performs typechecking on the expressions in the AST. Returns the "expected"
-// type (especially if there's conflicting types, an error message will be emitted
-// and the expected type will be returned)
-struct type *expr_typecheck(struct expr *e, int *error_count);
+// Performs name resolution and typechecking on the expressions in the AST. Returns
+// the "expected" type (especially if there's conflicting types, an error message 
+// will be emitted and the expected type will be returned)
+struct type *expr_semantic_check(struct expr *e, int *error_count);
 
 // Destructor for expressions
 void expr_free(struct expr *e);

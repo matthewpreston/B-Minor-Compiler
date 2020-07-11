@@ -1,0 +1,8 @@
+// Error: array size cannot be less than or equal to zero
+a:array [0] integer;
+b:array [-1] integer;
+
+// Error: array size is not equal to the given initialization size
+c:array [3] integer = {-1, 2, 0, 4};
+
+main:function void () {}

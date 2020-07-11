@@ -1,0 +1,25 @@
+i:integer = 1;
+
+f:function void (i:integer, b:char) {
+	i = i + 1;
+	print i;
+	return;
+}
+
+f2:function void () {
+	i:integer = 3;
+	print i;
+}
+
+f3:function void () {
+	{
+		i:integer = 4;
+	}
+}
+
+f4:function void() {
+	if (i == 1) {
+		i:integer = 5;
+		print i;
+	}
+}

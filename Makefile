@@ -39,9 +39,18 @@ test: $(TARGET)
 	bash test_cases.sh
 	
 # For seeing how many lines of hand-written code I've done
+# `cat $file | wc` produces a constant white space gap versus `wc $file`
 wc:
-	@echo "Total line counts (with blank lines):\nLines Words Chars"; \
-	wc $(SOURCE_FILES);
-	@echo;
-	@echo "Total line counts (without blank lines):\n  Lines   Words   Chars"; \
-	sed "/^\s*$$/d" $(SOURCE_FILES) | wc
+	@echo "With blank lines:         | Without blank lines:"
+	@echo "  Lines   Words   Chars   |   Lines   Words   Chars"; \
+	for entry in $(SOURCE_FILES); do \
+		cat "$$entry" | wc | tr -d '\n'; \
+		printf "   | "; \
+		sed "/^\s*$$/d" "$$entry" | wc | tr -d '\n'; \
+		echo " $$entry"; \
+	done; \
+	cat $(SOURCE_FILES) | wc | tail -n 1 | tr -d '\n'; \
+	printf "   | "; \
+	sed "/^\s*$$/d" $(SOURCE_FILES) | wc | tr -d '\n'; \
+	echo " total";
+

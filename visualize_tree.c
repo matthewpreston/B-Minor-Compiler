@@ -323,6 +323,9 @@ Agnode_t *visualize_expr(Agraph_t *g, struct expr *e) {
 				integer_value = make_node(g, "true");
 			make_edge(g, expr, integer_value, "integer_value");
 			break;
+		case EXPR_ARRAY:
+			expr = make_node(g, "EXPR_ARRAY");
+			break;
 		case EXPR_SUBSCRIPT:
 			expr = make_node(g, "EXPR_SUBSCRIPT");
 			break;

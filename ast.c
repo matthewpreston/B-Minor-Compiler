@@ -10,6 +10,8 @@
 // If a decl is declared but not initialized, this function will provide a
 // default initialization (basically either 0 or NULL depending on the type)
 struct expr *_decl_default_initialization(struct type *t) {
+	if (t == NULL) return NULL;
+	
 	struct expr *result, *temp, *next;
 	
 	switch (t->kind) {
@@ -42,7 +44,8 @@ struct expr *_decl_default_initialization(struct type *t) {
 				}
 			}
 			expr_free(temp);
-			return result;
+			
+			return expr_create(EXPR_ARRAY, result, NULL);
 		case TYPE_FUNCTION:
 			// For now, according to my knowledge, a function is placed in an
 			// address in memory. When we update an array of functions, we are
@@ -81,6 +84,7 @@ struct decl *decl_create(
 }
 
 // Name resolving during AST re-traversal for declarations
+/*
 int decl_resolve(struct decl *d) {
 	if (d == NULL) return 0;
 	
@@ -114,26 +118,63 @@ int decl_resolve(struct decl *d) {
 	result |= decl_resolve(d->next);
 	return result;
 }
+*/
 
-// Performs typechecking on the declarations in the AST
-void decl_typecheck(struct decl *d, int *error_count) {
+// Performs name resolution and typechecking on the declarations in the AST
+void decl_semantic_check(struct decl *d, int *error_count) {
 	if (d == NULL) return;
-	
+
 	// Check if initialization type is same a declared type
 	if (d->value != NULL) {
-		struct type *t = expr_typecheck(d->value, error_count);
-		if (!type_equals(t, d->type)) {
+		// Check array bounds are valid
+		if (d->type->kind == TYPE_ARRAY && d->type->num_elems <= 0) {
 			(*error_count)++;
-			ast_fprintf(stderr, "ERROR: Incorrect type <%T> used for identifier %s of type <%T>\n",
-						t, d->name, d->type);
+			fprintf(stderr, "ERROR: Invalid array size of %d for array variable \"%s\"; "
+							"must be a positive non-zero integer\n",
+					d->type->num_elems, d->name);
+		} else {
+			// Type check the variable instantiation
+			struct type *t = expr_semantic_check(d->value, error_count);
+			if (!type_equals(d->type, t)) {
+				(*error_count)++;
+				ast_fprintf(stderr, "ERROR: Incorrect type <%T> used for variable \"%s\" "
+									"of type <%T>\n",
+							t, d->name, d->type);
+			}
+			
+			// If it's an array, check their bounds
+			if (d->type->kind == TYPE_ARRAY && type_equals_array_bounds(d->type, t) != 1) {
+				(*error_count)++;
+				fprintf(stderr, "ERROR: Incorrect initialization array size (%d) given for "
+								"array variable \"%s\" of size %d\n",
+						t->num_elems, d->name, d->type->num_elems);
+			}			
+			type_free(t);
 		}
-		type_free(t);
 	}
 	
-	// If we have a function, check the types within the code statements
-	if (d->type->kind == TYPE_FUNCTION && d->code != NULL) {
-		stmt_typecheck(d->code, d->name, d->type->subtype, error_count);
+	// Add name to current scope (made sure to be done after expr_resolve
+	// or else may have had a self-assignment during initialization,
+	// i.e. i:integer = i;)
+	// But, first check that we haven't defined it already
+	if (scope_lookup_current(d->name) == NULL) { // Not defined
+		scope_bind(d->name, symbol_create(is_global_scope(), d->name, d->type));
+	} else { // Already defined
+		(*error_count)++;
+		fprintf(stderr, "ERROR: identifier \"%s\" already declared in this scope\n",
+				d->name);
 	}
+	
+	// If we have a function, create a new scope and name resolve/type check
+	if (d->type->kind == TYPE_FUNCTION && d->code != NULL) {
+		scope_enter();
+		*error_count += param_list_resolve(d->type->params);
+		stmt_semantic_check(d->code, d->name, d->type->subtype, error_count);
+		scope_exit();
+	}
+	
+	// Chain to next declaration
+	decl_semantic_check(d->next, error_count);
 }
 
 // Destructor for declarations
@@ -169,6 +210,7 @@ struct stmt *stmt_create(
 }
 
 // Name resolving during AST re-traversal for statements
+/*
 int stmt_resolve(struct stmt *s) {
 	if (s == NULL) return 0;
 	
@@ -209,10 +251,12 @@ int stmt_resolve(struct stmt *s) {
 	result |= stmt_resolve(s->next);
 	return result;
 }
+*/
 
-// Performs typechecking on the statements in the AST. Provide the name and return type
-// of the function as to type check whether the function actually returns that type
-void stmt_typecheck(struct stmt *s, 
+// Performs name resolution and typechecking on the statements in the AST. Provide
+// the name and return type of the function as to type check whether the function
+// actually returns that type
+void stmt_semantic_check(struct stmt *s, 
 					const char* name,
 					struct type *return_type,
 					int *error_count)
@@ -222,14 +266,14 @@ void stmt_typecheck(struct stmt *s,
 	struct type *t;
 	switch(s->kind) {
 		case STMT_DECL:
-			decl_typecheck(s->decl, error_count);
+			decl_semantic_check(s->decl, error_count);
 			break;
 		case STMT_EXPR:
-			t = expr_typecheck(s->expr, error_count);
+			t = expr_semantic_check(s->expr, error_count);
 			type_free(t);
 			break;
 		case STMT_IF_ELSE:
-			t = expr_typecheck(s->expr, error_count);
+			t = expr_semantic_check(s->expr, error_count);
 			if (t->kind != TYPE_BOOLEAN) {
 				(*error_count)++;
 				ast_fprintf(stderr, "ERROR: In function %s, in IF statement, "
@@ -237,14 +281,14 @@ void stmt_typecheck(struct stmt *s,
 							name, t);
 			}
 			type_free(t);
-			stmt_typecheck(s->body, name, return_type, error_count);
-			stmt_typecheck(s->else_body, name, return_type, error_count);
+			stmt_semantic_check(s->body, name, return_type, error_count);
+			stmt_semantic_check(s->else_body, name, return_type, error_count);
 			break;
 		case STMT_FOR:
 			// Only have to check the condition part. The initialization and step part
 			// are usually assignments, but can do whatever they want (i.e. function
 			// calls with side effects)
-			t = expr_typecheck(s->expr, error_count);
+			t = expr_semantic_check(s->expr, error_count);
 			if (t != NULL && t->kind != TYPE_BOOLEAN) {
 				(*error_count)++;
 				ast_fprintf(stderr, "ERROR: In function %s, in FOR statement condition, "
@@ -252,19 +296,19 @@ void stmt_typecheck(struct stmt *s,
 							name, t);
 			}
 			type_free(t);
-			stmt_typecheck(s->body, name, return_type, error_count);
+			stmt_semantic_check(s->body, name, return_type, error_count);
 			break;
 		case STMT_PRINT:
 			// Apparently, the language specification says we can print any type.
 			// Good luck future me <--- >:c
 			// So for now, just check the types are fine internally for each print
 			// argument
-			t = expr_typecheck(s->expr, error_count);
+			t = expr_semantic_check(s->expr, error_count);
 			type_free(t);
 			break;
 		case STMT_RETURN:
 			// Ensure correct return type of a function
-			t = expr_typecheck(s->expr, error_count);
+			t = expr_semantic_check(s->expr, error_count);
 			if (t == NULL) {
 				if (return_type->kind != TYPE_VOID) {
 					// User wrote a "return;" but their function doesn't return "void"
@@ -282,11 +326,15 @@ void stmt_typecheck(struct stmt *s,
 			type_free(t);
 			break;
 		case STMT_BLOCK:
-			stmt_typecheck(s->body, name, return_type, error_count);
+			scope_enter();
+			stmt_semantic_check(s->body, name, return_type, error_count);
+			scope_exit();
 			break;
 		default:
 			break;
 	}
+	
+	stmt_semantic_check(s->next, name, return_type, error_count);
 }
 
 // Destructor for statements
@@ -385,6 +433,7 @@ struct expr *expr_create_copy(struct expr *e) {
 }
 
 // Name resolving during AST re-traversal for expressions (0 for no error, 1 otherwise)
+/*
 int expr_resolve(struct expr *e) {
 	if (e == NULL) return 0;
 	
@@ -402,24 +451,33 @@ int expr_resolve(struct expr *e) {
 	}
 	return result;
 }
+*/
 
-// Performs typechecking on the expressions in the AST. Returns the "expected"
-// type (especially if there's conflicting types, an error message will be emitted
-// and the expected type will be returned)
-struct type *expr_typecheck(struct expr *e, int *error_count) {
+// Performs name resolution and typechecking on the expressions in the AST. Returns
+// the "expected" type (especially if there's conflicting types, an error message
+// will be emitted and the expected type will be returned)
+struct type *expr_semantic_check(struct expr *e, int *error_count) {
 	if (e == NULL) return NULL;
 	
-	struct type *left = expr_typecheck(e->left, error_count);
-	struct type *right = expr_typecheck(e->right, error_count);
+	struct type *left = expr_semantic_check(e->left, error_count);
+	struct type *right = expr_semantic_check(e->right, error_count);
 
+	struct symbol *s;
 	struct param_list *expected;
 	struct expr *given;
 	int flag = 0, params_expected = 0, params_given = 0;
 	char *operation;
-	struct type *result;
+	struct type *result, *given_param_type;
 	switch (e->kind) {
 		case EXPR_IDENTIFIER:
-			result = type_create_copy(scope_lookup(e->name)->type);
+			s = scope_lookup(e->name);
+			if (s == NULL) {
+				(*error_count)++;
+				fprintf(stderr, "ERROR: identifier \"%s\" not yet declared\n", e->name);
+				result = type_create_basic(TYPE_VOID); // Error type
+			} else {
+				result = type_create_copy(s->type);
+			}
 			break;
 		case EXPR_INTEGER_LITERAL:
 			result = type_create_basic(TYPE_INTEGER);
@@ -432,6 +490,15 @@ struct type *expr_typecheck(struct expr *e, int *error_count) {
 			break;
 		case EXPR_BOOLEAN_LITERAL:
 			result = type_create_basic(TYPE_BOOLEAN);
+			break;
+		case EXPR_ARRAY:
+			// The left node will contain the subtype, all we do is wrap with an array
+			// type
+			params_given = 0;
+			for (given = e->left; given != NULL; given = given->right) {
+				params_given++;
+			}
+			result = type_create_array(type_create_copy(left), params_given);
 			break;
 		case EXPR_SUBSCRIPT:
 			if (left->kind == TYPE_ARRAY) {
@@ -452,20 +519,24 @@ struct type *expr_typecheck(struct expr *e, int *error_count) {
 			// The function signature is stored in "left"
 			// We must check if "left" was an function or not
 			if (left->kind == TYPE_FUNCTION) {
-			
-				// Check if we were given the correct number of parameters
 				params_expected = params_given = 0;
+				
+				// First, check if we were given the correct number of parameters
+				// Count up the expected number of parameters
 				for (expected = left->params; expected != NULL; expected = expected->next)
 					params_expected++;
+					
+				// Count up the given number of parameters
 				// For traversing the right side of the expression tree, it will be a
 				// linked list of EXPR_ARG
 				for (given = e->right; given != NULL; given = given->right)
 					params_given++;
+					
 				if (params_expected != params_given) {
 					(*error_count)++;
-					fprintf(stderr, "ERROR: In function call, incorrect number of parameters "
-									"passed. Expected %d, got %d\n",
-							params_expected, params_given);
+					fprintf(stderr, "ERROR: In function call for \"%s\", incorrect number "
+									"of parameters passed. Expected %d, got %d\n",
+							e->left->name, params_expected, params_given);
 				} else {
 		
 					// Now we check if the types of params provided are the same
@@ -474,11 +545,13 @@ struct type *expr_typecheck(struct expr *e, int *error_count) {
 					for (expected = left->params, given = e->right;
 							expected != NULL && given != NULL;
 							expected = expected->next, given = given->right, params_expected++) {
-						if (!type_equals(expected->type, expr_typecheck(given, error_count))) {
+						given_param_type = expr_semantic_check(given, error_count);
+						if (!type_equals(expected->type, given_param_type)) {
 							(*error_count)++;
-							ast_fprintf(stderr, "ERROR: In function call, for parameter #%d, "
-											    "expected type <%T>, got <%T>\n",
-									    params_expected, expected, given);
+							ast_fprintf(stderr, "ERROR: In function call for \"%s\", for "
+												"parameter #%d, expected type <%T>, got <%T>\n",
+									    e->left->name, params_expected, expected->type,
+									    given_param_type);
 						}
 					}
 				}
@@ -616,7 +689,6 @@ boolean_comparison:
 	
 	type_free(left);
 	type_free(right);
-	puts("Done type checking expr");
 	return result;
 }
 
@@ -632,20 +704,13 @@ void expr_free(struct expr *e) {
 
 // Performs name resolution and type checking on AST. Returns number of errors.
 int perform_semantic_analysis(struct decl *ast) {
-	int num_errors;
-
 	GLOBAL_SCOPES = initialize_GLOBAL_SCOPES(); // GLOBAL_SCOPES in scope.h
+	int num_errors = 0;
 	
-	// Perform name resolution
-	num_errors = decl_resolve(ast);
+	// Perform name resolution, type checking, array initialization size checks
+	decl_semantic_check(ast, &num_errors);
+
 	free_GLOBAL_SCOPES();
-	
-	// Perform type checking
-	//decl_typecheck(ast, &num_errors);
-	
-	// Perform array initialization checking
-	// TODO
-	
 	return num_errors;
 }
 
@@ -707,24 +772,25 @@ int ast_vfprintf(FILE *stream, const char *fmt, va_list args) {
 					break;
 			}
 			
-			// See if we've overflown the buffer
-			int length = strlen(result);
-			int delta = i + length - (AST_PRINTF_BUFFER - 1);
-			
-			if (delta >= 0) { // Overflown, break it up into 2 parts
-				// We've overflown by length - delta
-				strncpy(buffer + i, result, length - delta);
-				buffer[AST_PRINTF_BUFFER-1] = '\0';
-				fprintf(stream, "%s", buffer);
-				total += AST_PRINTF_BUFFER - 1;
-				strncpy(buffer, result + (length - delta), delta);
-				i = delta;
-			} else { // Not overflown, copy to buffer
-				strncpy(buffer + i, result, length);
-				i += length;
+			if (result != NULL) {
+				// See if we've overflown the buffer
+				int length = strlen(result);
+				int delta = i + length - (AST_PRINTF_BUFFER - 1);
+				
+				if (delta >= 0) { // Overflown, break it up into 2 parts
+					// We've overflown by length - delta
+					strncpy(buffer + i, result, length - delta);
+					buffer[AST_PRINTF_BUFFER-1] = '\0';
+					fprintf(stream, "%s", buffer);
+					total += AST_PRINTF_BUFFER - 1;
+					strncpy(buffer, result + (length - delta), delta);
+					i = delta;
+				} else { // Not overflown, copy to buffer
+					strncpy(buffer + i, result, length);
+					i += length;
+				}
+				free(result);
 			}
-			
-			if (result != NULL) free(result);
 		}
 	}
 

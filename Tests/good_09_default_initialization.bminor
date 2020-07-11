@@ -1,0 +1,11 @@
+// Tests default initialization of all types
+a:integer;
+b:boolean;
+c:char;
+d:string;
+e:array [5] integer;
+f:array [2] array [3] integer;
+g:array [3] function void (x:integer, y:boolean);
+h:function integer(x:char, y:boolean);
+
+main:function integer() { return 0; }
